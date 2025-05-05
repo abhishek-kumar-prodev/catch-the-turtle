@@ -12,36 +12,62 @@ from my_turtle_interfaces.srv import CatchTurtle
 
 class TurtleSpawnerNode(Node):
     def __init__(self):
-        super().__init__("turtle_spawner") 
-        
+        super().__init__("turtle_spawner")
+
+        # Declare parameters
+        self.declare_parameter('spawn_frequency', 1.5)  # Default spawn frequency
+
+        # Get parameter
+        self.spawn_frequency_ = self.get_parameter('spawn_frequency').get_parameter_value().double_value
+
         # State variables
-        self.alive_turtles_ = []  # List of currently alive turtles
+        self.alive_turtles_ = []
 
         # ROS 2 Interfaces
         self.alive_turtles_publisher_ = self.create_publisher(TurtleArray, "alive_turtles", 10)
         self.spawn_client_ = self.create_client(Spawn, "/spawn")
         self.catch_turtle_service_ = self.create_service(CatchTurtle, "catch_turtle", self.callback_catch_turtle)
         self.kill_turtle_client_ = self.create_client(Kill, "/kill")
-        
-        # Timer for spawning turtles every 1.5 seconds
-        self.create_timer(1.5, self.call_spawn_turtle)
 
-    # --- Service Callbacks ---
+        # Timer for spawning turtles based on the spawn frequency parameter
+        self.create_timer(self.spawn_frequency_, self.call_spawn_turtle)
+
+    # --- Service Handlers ---
 
     def callback_catch_turtle(self, request: CatchTurtle.Request, response: CatchTurtle.Response):
-        """
-        Callback for the catch_turtle service. 
-        Kills the requested turtle and returns a message.
-        """
+        """Handles the request to catch a turtle and kill it."""
         self.call_kill_turtle_service(request.turtle_to_catch)
         response.message = f"Killing turtle: {request.turtle_to_catch.name}"
         return response
 
+    def publish_alive_turtles(self):
+        """Publishes the list of alive turtles."""
+        msg = TurtleArray()
+        msg._turtles = self.alive_turtles_
+        self.alive_turtles_publisher_.publish(msg)
+
+    # --- Turtle Spawning ---
+
+    def call_spawn_turtle(self):
+        """Calls the service to spawn a new turtle with random position."""
+        # Wait for the service to be available
+        while not self.spawn_client_.wait_for_service(1):
+            self.get_logger().warn("Waiting for service...")
+
+        # Generate random pose for the new turtle
+        random_pose = self.generate_random_target_pose()
+
+        request = Spawn.Request()
+        request.x = random_pose.x
+        request.y = random_pose.y
+        request.theta = random_pose.theta
+
+        # Call the spawn service asynchronously
+        future = self.spawn_client_.call_async(request)
+        future.add_done_callback(partial(self.callback_call_spawn_turtle, request=request))
+
     def callback_call_spawn_turtle(self, future, request: Spawn.Request):
-        """
-        Callback to handle the response of spawning a turtle. 
-        If the turtle is successfully spawned, adds it to the list of alive turtles.
-        """
+        """Handles the callback after the turtle is spawned."""
         response: Spawn.Response = future.result()
 
         if response.name != "":
@@ -54,13 +80,23 @@ class TurtleSpawnerNode(Node):
             self.alive_turtles_.append(new_turtle)
             self.publish_alive_turtles()
         else:
-            self.get_logger().info("New turtle not spawned.!")
+            self.get_logger().info("New turtle not spawned!")
+
+    # --- Kill Turtle ---
+
+    def call_kill_turtle_service(self, turtle: Turtle):
+        """Kills the specified turtle by calling the /kill service."""
+        while not self.kill_turtle_client_.wait_for_service(1.0):
+            self.get_logger().warn("Waiting for kill service...")
+
+        request = Kill.Request()
+        request.name = turtle.name
+
+        future = self.kill_turtle_client_.call_async(request)
+        future.add_done_callback(partial(self.callback_call_kill_turtle_service, request=request))
 
     def callback_call_kill_turtle_service(self, future, request: Kill.Request):
-        """
-        Callback to handle the response of the kill_turtle service.
-        Removes the killed turtle from the list of alive turtles.
-        """
+        """Handles the callback after a turtle is killed."""
         for i, turtle in enumerate(self.alive_turtles_):
             if turtle.name == request.name:
                 del self.alive_turtles_[i]
@@ -68,50 +104,10 @@ class TurtleSpawnerNode(Node):
 
         self.publish_alive_turtles()
 
-    # --- Utility Functions ---
-
-    def publish_alive_turtles(self):
-        """
-        Publishes the list of currently alive turtles to the ROS 2 topic.
-        """
-        msg = TurtleArray()
-        msg._turtles = self.alive_turtles_
-        self.alive_turtles_publisher_.publish(msg)
-
-    def call_spawn_turtle(self):
-        """
-        Requests the spawn service to create a new turtle at a random position.
-        """
-        while not self.spawn_client_.wait_for_service(1):
-            self.get_logger().warn("Waiting for service...")
-
-        random_pose = self.generate_random_target_pose()
-
-        request = Spawn.Request()
-        request.x = random_pose.x
-        request.y = random_pose.y
-        request.theta = random_pose.theta
-
-        future = self.spawn_client_.call_async(request)
-        future.add_done_callback(partial(self.callback_call_spawn_turtle, request=request))
-
-    def call_kill_turtle_service(self, turtle: Turtle):
-        """
-        Calls the kill service to remove the specified turtle.
-        """
-        while not self.kill_turtle_client_.wait_for_service(1.0):
-            self.get_logger().warn("Waiting for kill service...")
-        
-        request = Kill.Request()
-        request.name = turtle.name
-
-        future = self.kill_turtle_client_.call_async(request)
-        future.add_done_callback(partial(self.callback_call_kill_turtle_service, request=request))
+    # --- Random Pose Generator ---
 
     def generate_random_target_pose(self):
-        """
-        Generates a random pose (x, y, theta) for spawning a new turtle.
-        """
+        """Generates a random pose for spawning the turtle."""
         pose = Pose()
         pose.x = random.uniform(1.0, 10.0)
         pose.y = random.uniform(1.0, 10.0)
@@ -121,7 +117,7 @@ class TurtleSpawnerNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    node = TurtleSpawnerNode() 
+    node = TurtleSpawnerNode()
     rclpy.spin(node)
     rclpy.shutdown()
 

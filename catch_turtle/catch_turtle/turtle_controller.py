@@ -2,7 +2,6 @@
 import rclpy
 from rclpy.node import Node
 from math import sqrt, sin, cos, atan2, pi
-
 from turtlesim.msg import Pose
 from geometry_msgs.msg import Twist
 from my_turtle_interfaces.msg import Turtle, TurtleArray
@@ -11,28 +10,35 @@ from my_turtle_interfaces.srv import CatchTurtle
 
 class TurtleControllerNode(Node):
     def __init__(self):
-        super().__init__("turtle_controller") 
+        super().__init__("turtle_controller")
+
+        # Declare parameters
+        self.declare_parameter('linear_velocity_factor', 1.5)  # Default: 1.5
+        self.declare_parameter('angular_velocity_factor', 4.0)  # Default: 4.0
+        self.declare_parameter('timer_frequency', 0.02)  # Default: 0.02
+
+        # Get parameters
+        self.linear_velocity_factor_ = self.get_parameter('linear_velocity_factor').get_parameter_value().double_value
+        self.angular_velocity_factor_ = self.get_parameter('angular_velocity_factor').get_parameter_value().double_value
+        self.timer_frequency_ = self.get_parameter('timer_frequency').get_parameter_value().double_value
 
         # State variables
-        self.current_pose_: Pose = None
-        self.target_turtle_: Turtle = None
+        self.current_pose_ = None  # Current pose of the turtle (initialized to None)
+        self.target_turtle_ = None  # Target turtle (initialized to None)
 
         # ROS 2 Interfaces
-        self.turtle_pose_sub_ = self.create_subscription(
-            Pose, "/turtle1/pose", self.callback_pose, 10)
-        self.alive_turtles_sub_ = self.create_subscription(
-            TurtleArray, "alive_turtles", self.callback_alive_turtles, 10)
-        self.cmd_vel_pub_ = self.create_publisher(
-            Twist, "/turtle1/cmd_vel", 10)
+        self.turtle_pose_sub_ = self.create_subscription(Pose, "/turtle1/pose", self.callback_pose, 10)
+        self.alive_turtles_sub_ = self.create_subscription(TurtleArray, "alive_turtles", self.callback_alive_turtles, 10)
+        self.cmd_vel_pub_ = self.create_publisher(Twist, "/turtle1/cmd_vel", 10)
         self.catch_turtle_client_ = self.create_client(CatchTurtle, "catch_turtle")
 
-        # Timer for control loop (runs every 20ms)
-        self.timer_ = self.create_timer(0.02, self.control_loop)
+        # Timer (control loop with adjustable frequency)
+        self.timer_ = self.create_timer(self.timer_frequency_, self.control_loop)
 
         self.get_logger().info("Turtle controller node started...")
 
     # --- Callback Functions ---
-
+    
     def callback_pose(self, pose: Pose):
         """Stores the current position and orientation of the turtle."""
         self.current_pose_ = pose
@@ -75,8 +81,8 @@ class TurtleControllerNode(Node):
             )
 
             # Proportional control
-            cmd.linear.x = 1.5 * distance
-            cmd.angular.z = 4.0 * angle_diff
+            cmd.linear.x = self.linear_velocity_factor_ * distance
+            cmd.angular.z = self.angular_velocity_factor_ * angle_diff
             self.cmd_vel_pub_.publish(cmd)
 
             self.get_logger().info(f"Distance to target: {distance:.2f}")
