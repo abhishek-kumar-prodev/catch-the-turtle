@@ -1,0 +1,5 @@
+/turtle_controller:
+  ros__parameters:
+    linear_velocity_factor: 1.5
+    angular_velocity_factor: 4.0
+    timer_frequency: 0.02
