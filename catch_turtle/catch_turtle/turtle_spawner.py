@@ -23,7 +23,7 @@ class TurtleSpawnerNode(Node):
             CatchTurtle, "catch_turtle", self.callback_catch_turtle)
         self.kill_turtle_client_ = self.create_client(
             Kill, "/kill")
-        self.create_timer(5, self.call_spawn_turtle)
+        self.create_timer(1.5, self.call_spawn_turtle)
 
     def callback_catch_turtle(self, request: CatchTurtle.Request, response: CatchTurtle.Response):
         self.call_kill_turtle_service(request.turtle_to_catch)

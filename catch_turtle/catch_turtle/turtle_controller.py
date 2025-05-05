@@ -27,9 +27,22 @@ class TurtleControllerNode(Node):
         self.get_logger().info("Turtle controller node started...")
 
     def callback_alive_turtles(self, turtle_list:TurtleArray):
-        if len(turtle_list.turtles) > 0:
-            self.target_turtle_ = turtle_list.turtles[0]
-        
+        if turtle_list.turtles:  
+            turtle_distances = []
+            for turtle in turtle_list.turtles:
+                dist = self.calculate_distance(turtle.x, turtle.y, self.current_pose_.x, self.current_pose_.y)
+                turtle_distances.append(dist)
+
+            min_index = turtle_distances.index(min(turtle_distances))
+            self.target_turtle_ = turtle_list.turtles[min_index]
+
+
+    @staticmethod
+    def calculate_distance(target_x,target_y,current_x,current_y):
+        dx = target_x - current_x
+        dy = target_y - current_y
+        distance = sqrt(dx ** 2 + dy ** 2)
+        return distance
 
     def callback_pose(self, pose:Pose):
         self.current_pose_ = pose
@@ -46,14 +59,8 @@ class TurtleControllerNode(Node):
 
         if distance > 0.5:
             angle_to_target = atan2(dy, dx)
-            #angle_diff = angle_to_target - self.current_pose_.theta
             angle_diff = atan2(sin(angle_to_target - self.current_pose_.theta), 
                    cos(angle_to_target - self.current_pose_.theta))
-
-            if angle_diff > pi:
-                angle_diff -= pi
-            elif angle_diff < -pi:
-                angle_diff += pi
 
             cmd.linear.x = 1.5 * distance
             cmd.angular.z = 4.0 * angle_diff
@@ -62,6 +69,7 @@ class TurtleControllerNode(Node):
         else:
             cmd.linear.x = 0
             cmd.angular.z = 0
+            self.cmd_vel_pub_.publish(cmd)
             self.catch_target_turtle()
             self.get_logger().info("Target reached")
 
